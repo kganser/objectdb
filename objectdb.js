@@ -128,7 +128,7 @@ var objectDB = function() {
   
   return {
     open: function(database, upgrade, version, onError) {
-    /** database: {
+    /** objectDB: {
           open: function(database:string, upgrade=`{}`:json|function(UpgradeTransaction), version=1:number, onError=undefined:function(error:DOMError, blocked:boolean)) -> Database,
           delete: function(database:string, callback:function(error:undefined|DOMError, blocked:boolean)),
           list: function(callback:function(DOMStringList))
@@ -376,7 +376,7 @@ var objectDB = function() {
               });`
               
               The following call will get immediate members of the requested object sorted lexicographically (by code
-              unit value) up to and including key value 'c', but excluding key 'abc' (if any):
+              unit value) up to and including key value `'c'`, but excluding key `'abc'` (if any):
 
              `.get('path/to/object', function(path) {
                 return path.length ? false : {
