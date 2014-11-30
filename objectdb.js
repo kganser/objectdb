@@ -302,10 +302,10 @@ var objectDB = function() {
             close: function
           }
           
-          `get`, `put`, `append`, and `delete` are convenience methods that operate through `transaction` for a single
-          objectStore and return the corresponding `ScopedTransaction`. `get` initiates a read-only transaction by
-          default. `transaction` returns a `ScopedTransaction` if a single (string) objectStore is specified, and a
-          `Transaction` if operating on multiple objectStores. */
+          `get`, `put`, `insert`, `append`, and `delete` are convenience methods that operate through `transaction` for
+          a single objectStore and return the corresponding `ScopedTransaction`. `get` initiates a read-only
+          transaction by default. `transaction` returns a `ScopedTransaction` if a single (string) objectStore is
+          specified, and a `Transaction` if operating on multiple objectStores. */
       return self = {
         transaction: function(writable, stores) {
           if (stores == null) stores = 'data';
@@ -334,7 +334,7 @@ var objectDB = function() {
               }
               
               All methods except `then` are chainable and execute on the same transaction in parallel. If the
-              transaction is not writable, `put`, `append`, and `delete` are null.
+              transaction is not writable, `put`, `insert`, `append`, and `delete` are null.
               
               `path` is a `/`-separated string of array indices and `encodeURIComponent`-encoded object keys denoting
               the path to the desired element within the object store's json data structure; e.g.
@@ -345,8 +345,8 @@ var objectDB = function() {
               When all pending operations complete, `callback` is called with the result of each queued operation in
               order. More operations can be queued onto the same transaction at that time via `this`.
               
-              Results from `put`, `append`, and `delete` are error strings or undefined if successful. `get` results
-              are json data or undefined if no value exists at the requested path. */
+              Results from `put`, `insert`, `append`, and `delete` are error strings or undefined if successful. `get`
+              results are json data or undefined if no value exists at the requested path. */
               
           /** Cursor: function(path:[string|number, ...], array:boolean) -> boolean|Action|{
                 lowerBound=null: string|number,
