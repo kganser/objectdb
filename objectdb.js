@@ -368,17 +368,17 @@ var objectDB = function() {
               `Action` callback can optionally return either `'skip'` or `'stop'` to exclude the element at the given
               key from the structure or to exclude and stop iterating, respectively.
               
-              For example, the following `ScopedTransaction` call uses a cursor to fetch only the immediate members of
-              the object at the requested path. Object and array values will be empty:
+              For example, the following call uses a cursor to fetch only the immediate members of the object at the
+              requested path. Object and array values will be empty:
               
-             `.get('path/to/object', function(path) {
+             `db.get('path/to/object', function(path) {
                 return !path.length;
               });`
               
               The following call will get immediate members of the requested object sorted lexicographically (by code
               unit value) up to and including key value `'c'`, but excluding key `'abc'` (if any):
 
-             `.get('path/to/object', function(path) {
+             `db.get('path/to/object', function(path) {
                 return path.length ? false : {
                   upperBound: 'c',
                   action: function(key) {
