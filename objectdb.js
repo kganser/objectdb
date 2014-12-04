@@ -6,50 +6,49 @@ var objectDB = function() {
 
   var makeKey = function(path) {
     var key = path.length ? path[path.length-1] : '';
-    return [path.length < 2 && !key ? 0 : path.slice(0, -1).join('/'), typeof key == 'number' ? key : decodeURIComponent(key)];
+    return [path.length < 2 && !key ? 0 : path.slice(0, -1).map(encodeURIComponent).join('/'), key];
   };
   var makePath = function(key) {
     return (key[0] ? key[0]+'/' : '')+encodeURIComponent(key[1]);
   };
   var scopedRange = function(parent, lower, upper, le, ue) {
+    parent = parent.map(encodeURIComponent).join('/');
     ue = upper == null || ue;
     lower = lower == null ? [parent] : [parent, lower];
     upper = upper == null ? [parent+'\0'] : [parent, upper];
     return IDBKeyRange.bound(lower, upper, le, ue);
   };
-  var getPath = function(store, path, callback) {
-    // substitute array indices in path with element keys
-    // if last segment is an array index, its original (numeric) value
-    // will be returned as `position`
-    var position;
-    path = (path || '').split('/').map(decodeURIComponent);
-    (function advance(i) {
+  var resolvePath = function(store, path, callback) {
+    // substitute array indices in path with numeric keys;
+    // second argument to callback is true if path is an empty array slot
+    path = path ? path.split('/').map(decodeURIComponent) : [];
+    (function advance(i, empty) {
       while (i < path.length && !/0|[1-9][0-9]*/.test(path[i])) i++;
-      if (i == path.length) return callback(path, position);
-      var skip = position = parseInt(path[i]);
+      if (i == path.length) return callback(path, empty);
+      var position = parseInt(path[i]);
       store.get(makeKey(path.slice(0, i))).onsuccess = function(e) {
         var result = e.target.result;
-        if (!result) return callback(path, position);
+        if (!result) return callback(path, empty);
         if (result.type != 'array') return advance(i+1);
         // set to numeric index initially, and to key if element is found
         path[i] = position;
-        store.openCursor(scopedRange(path.slice(0, i).join('/'))).onsuccess = function(e) {
+        store.openCursor(scopedRange(path.slice(0, i))).onsuccess = function(e) {
           var cursor = e.target.result;
-          if (cursor && skip) {
-            cursor.advance(skip);
-            skip = 0;
+          if (cursor && position) {
+            cursor.advance(position);
+            position = 0;
           } else {
             if (cursor) path[i] = cursor.value.key;
-            advance(i+1);
+            advance(i+1, !cursor);
           }
         };
       };
-    }(1));
+    }(0));
   };
-  var get = function(store, key, callback, cursor) {
+  var get = function(store, path, callback, cursor) {
     var next;
-    if (typeof cursor != 'function') cursor = function() {}; 
-    store.get(key).onsuccess = function(e) {
+    if (typeof cursor != 'function') cursor = function() {};
+    store.get(makeKey(path)).onsuccess = function(e) {
       var result = e.target.result;
       if (!result) return next || callback();
       (next = function(result, parent, path, callback) {
@@ -77,37 +76,43 @@ var objectDB = function() {
           if (action == 'stop') return --pending || callback(value);
           if (action != 'skip') {
             value[key] = pending++;
-            next(result, makePath([result.parent, result.key]), path.concat([key]), function(child) {
+            next(result, parent.concat([result.key]), path.concat([key]), function(child) {
               value[key] = child;
               if (!--pending) callback(value);
             });
           }
           cursor.continue();
         };
-      })(result, makePath(key), [], callback);
+      })(result, path, [], callback);
     };
   };
-  var put = function(store, key, value, callback) {
+  var put = function(store, path, value, callback) {
     // { key: (key or index relative to parent)
-    //   parent: (URL path of parent entry)
+    //   parent: (path of parent entry)
     //   type: (string|number|boolean|null|array|object)
     //   value: (or null if array or object) }
     var type = Array.isArray(value) ? 'array' : typeof value == 'object' ? value ? 'object' : 'null' : typeof value,
-        parent = makePath(key),
+        key = makeKey(path),
         pending = 1,
         cb = function() { if (!--pending) callback(); };
     store.put({parent: key[0], key: key[1], type: type, value: typeof value == 'object' ? null : value}).onsuccess = cb;
     if (type == 'array') {
       value.forEach(function(value, i) {
         pending++;
-        put(store, [parent, i], value, cb);
+        put(store, path.concat([i]), value, cb);
       });
     } else if (type == 'object') {
       Object.keys(value).forEach(function(key) {
         pending++;
-        put(store, [parent, key], value[key], cb);
+        put(store, path.concat([key]), value[key], cb);
       });
     }
+  };
+  var append = function(store, path, value, callback) {
+    store.openCursor(scopedRange(path), 'prev').onsuccess = function(e) {
+      var cursor = e.target.result;
+      put(store, path.concat([cursor ? cursor.value.key+1 : 0]), value, callback);
+    };
   };
   var deleteChildren = function(store, path, callback) {
     var pending = 1,
@@ -120,7 +125,7 @@ var objectDB = function() {
       store.delete([result.parent, result.key]).onsuccess = cb;
       if (result.type == 'object' || result.type == 'array') {
         pending++;
-        deleteChildren(store, makePath([result.parent, result.key]), cb);
+        deleteChildren(store, path.concat([result.key]), cb);
       }
       cursor.continue();
     }
@@ -134,7 +139,7 @@ var objectDB = function() {
           list: function(callback:function(DOMStringList))
         }
         
-        Database is backed by `indexedDB`. An upgrade transaction runs on `open` if the database version is less than
+        ObjectDB is backed by `indexedDB`. An upgrade transaction runs on `open` if the database version is less than
         the requested version or does not exist. If `upgrade` is a json value, the data stores in the first transaction
         operation on this `Database` will be populated with this value on an upgrade event. Otherwise, an upgrade will
         be handled by the given function via `UpgradeTransaction`. */
@@ -163,7 +168,7 @@ var objectDB = function() {
             createObjectStore: function(name, data) {
               if (db.objectStoreNames.contains(name))
                 throw 'objectStore already exists';
-              put(db.createObjectStore(name, {keyPath: ['parent', 'key']}), makeKey([]), data === undefined ? {} : data, function() {});
+              put(db.createObjectStore(name, {keyPath: ['parent', 'key']}), [], data === undefined ? {} : data, function() {});
               return self;
             },
             deleteObjectStore: function(name) {
@@ -188,63 +193,56 @@ var objectDB = function() {
       };
       var transaction = function(type, stores, callback) {
         var trans, pending = 0, values = [], self = {
-          get: function(store, path, callback, cursor) {
-            get(store, makeKey(path), callback, cursor);
-          },
-          put: function(store, path, callback, value, insert, position) {
+          get: get,
+          put: function(store, path, callback, value, insert, empty) {
             var parentPath = path.slice(0, -1);
             store.get(makeKey(parentPath)).onsuccess = function(e) {
               var parent = e.target.result,
-                  root = path.length < 2 && !path[0],
                   key = path[path.length-1];
-              if (!parent && !root)
+              if (!parent && path.length)
                 return callback('Parent resource does not exist');
-              if (insert && (root || parent.type != 'array'))
+              if (insert && (!path.length || parent.type != 'array'))
                 return callback('Parent resource is not an array');
               if (parent && parent.type != 'object' && parent.type != 'array')
                 return callback('Parent resource is not an object or array');
               if (parent && parent.type == 'array' && typeof key != 'number')
                 return callback('Invalid index to array resource');
-              parentPath = root ? 0 : parentPath.join('/');
               if (insert) {
-                var i = 0, realKey = 0, lastShiftKey;
-                store.openCursor(scopedRange(parentPath)).onsuccess = function(e) {
+                var i = 0, lastShiftKey;
+                store.openCursor(scopedRange(parentPath, key)).onsuccess = function(e) {
                   var cursor = e.target.result;
-                  if (cursor && i < position) {
-                    // before desired position, track real key as previous key + 1
-                    realKey = cursor.value.key+1;
-                    cursor.continue();
-                  } else if (cursor && cursor.value.key == realKey+i-position) {
+                  if (cursor && cursor.value.key == key+i) {
                     // all contiguous keys after desired position must be shifted by one
                     lastShiftKey = cursor.value.key;
                     cursor.continue();
                   } else if (lastShiftKey != null) {
-                    // shift subsequent elements' keys
+                    // found last key to shift; now shift subsequent elements' keys
                     var pending = 1,
                         cb = function() { if (!--pending) callback(); };
-                    store.openCursor(scopedRange(parentPath), 'prev').onsuccess = function(e) {
-                      var cursor = e.target.result,
-                          element = cursor.value,
-                          key = element.key;
-                      if (key < realKey) return put(store, [parentPath, realKey], value, cb);
-                      if (key > lastShiftKey) return cursor.continue();
+                    store.openCursor(scopedRange(parentPath, key, lastShiftKey), 'prev').onsuccess = function(e) {
+                      cursor = e.target.result;
+                      if (!cursor) return put(store, path, value, cb);
+                      var index = cursor.value.key,
+                          currentPath = parentPath.concat([index]);
                       pending++;
-                      get(store, [parentPath, key], function(result) {
-                        deleteChildren(store, parentPath+'/'+key, function() {
-                          put(store, [parentPath, key+1], result, cb);
+                      get(store, currentPath, function(result) { // TODO: delete/put within cursor
+                        deleteChildren(store, currentPath, function() {
+                          put(store, parentPath.concat([index+1]), result, cb);
                           cursor.continue();
                         });
                       });
                     };
                   } else {
                     // didn't need to shift anything
-                    put(store, [parentPath, realKey], value, callback);
+                    put(store, path, value, callback);
                   }
                   i++;
                 };
+              } else if (empty && typeof key == 'number') {
+                append(store, parentPath, value, callback);
               } else {
-                deleteChildren(store, path.join('/'), function() {
-                  put(store, [parentPath, key], value, callback);
+                deleteChildren(store, path, function() {
+                  put(store, path, value, callback);
                 });
               }
             };
@@ -256,22 +254,19 @@ var objectDB = function() {
                 return callback('Parent resource does not exist');
               if (parent.type != 'array')
                 return callback('Parent resource is not an array');
-              store.openCursor(scopedRange(path = path.join('/')), 'prev').onsuccess = function(e) {
-                var cursor = e.target.result;
-                put(store, [path, cursor ? cursor.value.key+1 : 0], value, callback);
-              };
+              append(store, path, value, callback);
             };
           },
           delete: function(store, path, callback) {
             store.delete(makeKey(path));
-            deleteChildren(store, path.join('/'), callback);
+            deleteChildren(store, path, callback);
           }
         };
         Object.keys(self).forEach(function(name) {
           var method = self[name];
           var wrapped = function(store, path, value, insert) {
-            var i = values.push(pending++)-1;
-            getPath(store = trans.objectStore(store), path, function(path, position) {
+            var i = values.push(pending++)-1, p = path;
+            resolvePath(store = trans.objectStore(store), path, function(path, empty) {
               method(store, path, function(value) {
                 values[i] = value;
                 if (!--pending) {
@@ -279,7 +274,7 @@ var objectDB = function() {
                   values = [];
                   callback.apply(null, v);
                 }
-              }, value, insert, position);
+              }, value, insert, empty);
             });
           };
           self[name] = function(store, path, value, insert) {
