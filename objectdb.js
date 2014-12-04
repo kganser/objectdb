@@ -8,9 +8,6 @@ var objectDB = function() {
     var key = path.length ? path[path.length-1] : '';
     return [path.length < 2 && !key ? 0 : path.slice(0, -1).map(encodeURIComponent).join('/'), key];
   };
-  var makePath = function(key) {
-    return (key[0] ? key[0]+'/' : '')+encodeURIComponent(key[1]);
-  };
   var scopedRange = function(parent, lower, upper, le, ue) {
     parent = parent.map(encodeURIComponent).join('/');
     ue = upper == null || ue;
