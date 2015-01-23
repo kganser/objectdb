@@ -69,7 +69,7 @@ var objectDB = function() {
           if (!cursor) return --pending || callback(value);
           var result = cursor.value,
               key = array ? index++ : result.key,
-              action = path.length && c.action(key);
+              action = c.action(key);
           if (action == 'stop') return --pending || callback(value);
           if (action != 'skip') {
             value[key] = pending++;
