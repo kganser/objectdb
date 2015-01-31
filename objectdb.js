@@ -204,39 +204,34 @@ var objectDB = function() {
                 return callback('Parent resource is not an object or array');
               if (parent && parent.type == 'array' && typeof key != 'number')
                 return callback('Invalid index to array resource');
-              if (insert) {
-                var i = 0, lastShiftKey;
+              if (empty) { // array slot
+                append(store, parentPath, value, callback);
+              } else if (insert) {
+                var i = 0, lastShiftKey = key;
                 store.openCursor(scopedRange(parentPath, key)).onsuccess = function(e) {
                   var cursor = e.target.result;
-                  if (cursor && cursor.value.key == key+i) {
+                  if (cursor && cursor.value.key == key+i++) {
                     // all contiguous keys after desired position must be shifted by one
                     lastShiftKey = cursor.value.key;
-                    cursor.continue();
-                  } else if (lastShiftKey != null) {
-                    // found last key to shift; now shift subsequent elements' keys
-                    var pending = 1,
-                        cb = function() { if (!--pending) callback(); };
-                    store.openCursor(scopedRange(parentPath, key, lastShiftKey), 'prev').onsuccess = function(e) {
-                      cursor = e.target.result;
-                      if (!cursor) return put(store, path, value, cb);
-                      var index = cursor.value.key,
-                          currentPath = parentPath.concat([index]);
-                      pending++;
-                      get(store, currentPath, function(result) { // TODO: delete/put within cursor
-                        deleteChildren(store, currentPath, function() {
-                          put(store, parentPath.concat([index+1]), result, cb);
-                          cursor.continue();
-                        });
-                      });
-                    };
-                  } else {
-                    // didn't need to shift anything
-                    put(store, path, value, callback);
+                    return cursor.continue();
                   }
-                  i++;
+                  // found last key to shift; now shift subsequent elements' keys
+                  var pending = 1,
+                      cb = function() { if (!--pending) callback(); };
+                  store.openCursor(scopedRange(parentPath, key, lastShiftKey), 'prev').onsuccess = function(e) {
+                    cursor = e.target.result;
+                    if (!cursor) return put(store, path, value, cb);
+                    var index = cursor.value.key,
+                        currentPath = parentPath.concat([index]);
+                    pending++;
+                    get(store, currentPath, function(result) { // TODO: delete/put within cursor
+                      deleteChildren(store, currentPath, function() {
+                        put(store, parentPath.concat([index+1]), result, cb);
+                        cursor.continue();
+                      });
+                    });
+                  };
                 };
-              } else if (empty && typeof key == 'number') {
-                append(store, parentPath, value, callback);
               } else {
                 deleteChildren(store, path, function() {
                   put(store, path, value, callback);
