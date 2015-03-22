@@ -358,14 +358,14 @@ var objectDB = function() {
               For example, the following call uses a cursor to fetch only the immediate members of the object at the
               requested path. Object and array values will be empty:
               
-             `db.get('path/to/object', function(path) {
+             `db.get('path/to/object', false, function(path) {
                 return !path.length;
               });`
               
               The following call will get immediate members of the requested object sorted lexicographically (by code
               unit value) up to and including key value `'c'`, but excluding key `'abc'` (if any):
 
-             `db.get('path/to/object', function(path) {
+             `db.get('path/to/object', false, function(path) {
                 return path.length ? false : {
                   upperBound: 'c',
                   action: function(key) {
