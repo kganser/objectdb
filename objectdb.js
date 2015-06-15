@@ -20,7 +20,7 @@ var objectDB = function() {
     // second argument to callback is true if path is an empty array slot
     path = path ? path.split('/').map(decodeURIComponent) : [];
     (function advance(i, empty) {
-      while (i < path.length && !/0|[1-9][0-9]*/.test(path[i])) i++;
+      while (i < path.length && !/^(0|[1-9][0-9]*)$/.test(path[i])) i++;
       if (i == path.length) return callback(path, empty);
       var position = parseInt(path[i]);
       store.get(makeKey(path.slice(0, i))).onsuccess = function(e) {
