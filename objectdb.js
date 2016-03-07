@@ -120,14 +120,15 @@ var objectDB = function() {
             trans, self;
         Object.keys(self = {
           get: function(store, path, callback, cursor) {
-            var next;
+            var c = cursor;
             if (cursor === 'shallow') cursor = function() { return false; };
-            if (cursor === 'immediates') cursor = function(p) { return !p.length; };
-            if (typeof cursor != 'function') cursor = function() {};
+            else if (cursor === 'immediates') cursor = function(p) { return !p.length; };
+            else if (cursor && typeof cursor == 'object') cursor = function(p) { if (!p.length) return c; };
+            else if (typeof cursor != 'function') cursor = function() {};
             store.get(makeKey(path)).onsuccess = function(e) {
               var result = e.target.result;
-              if (!result) return next || callback();
-              (next = function(result, parent, path, callback) {
+              if (!result) return callback();
+              (function next(result, parent, path, callback) {
                 var value = result.value,
                     type = result.type;
                 if (type != 'object' && type != 'array')
@@ -138,24 +139,28 @@ var objectDB = function() {
                     index = 0;
                 value = array ? [] : {};
                 var cb = function() {
-                  // descending arrays are traversed in ascending order, then reversed
+                  // TODO: traverse desc arrays in desc order
                   if (!--pending) callback(array && c.descending ? value.reverse() : value);
                 };
                 if (c === false) return cb();
                 if (!c || typeof c != 'object') c = {action: c};
                 if (typeof c.action != 'function') c.action = function() {};
-                if (array && c.lowerBound >= 0 && c.lowerExclusive) c.lowerBound++;
-                if (array && c.upperBound >= 0 && c.upperExclusive) c.upperExclusive--;
+                var lower = array ? c.lowerBound || 0 : c.lowerBound,
+                    upper = c.upperBound;
+                if (array && lower >= 0 && c.lowerExclusive) lower++;
+                if (array && upper >= 0 && c.upperExclusive) upper--;
+                // TODO: negative index bounds (from array end)
                 (array ? store.openCursor(scopedRange(parent)) : store.openCursor(
-                  scopedRange(parent, c.lowerBound, c.upperBound, c.lowerExclusive, c.upperExclusive),
+                  scopedRange(parent, lower, upper, c.lowerExclusive, c.upperExclusive),
                   c.descending ? 'prev' : 'next'
                 )).onsuccess = function(e) {
                   var cursor = e.target.result;
-                  if (!cursor || array && index > c.upperBound) return cb();
-                  if (array && !index && c.lowerBound)
-                    return cursor.advance(c.lowerBound);
+                  if (!cursor) return cb();
+                  if (array && !index && lower)
+                    return cursor.advance(index = lower);
                   var result = cursor.value,
                       key = array ? index++ : result.key;
+                  if (array && key > upper) return cb();
                   var action = c.action(key);
                   if (action == 'stop') return cb();
                   if (action != 'skip') {
@@ -163,14 +168,14 @@ var objectDB = function() {
                     if (!array) value[key] = undefined;
                     next(result, parent.concat([result.key]), path.concat([key]), function(child) {
                       if (c.value) child = c.value(key, child);
-                      if (child !== undefined) value[key] = child;
+                      if (child !== undefined) value[array ? key-lower : key] = child;
                       else if (!array) delete value[key];
                       cb();
                     });
                   }
                   cursor.continue();
                 };
-              })(result, path, [], callback);
+              }(result, path, [], callback));
             };
           },
           count: function(store, path, callback, bounds) {
@@ -280,7 +285,7 @@ var objectDB = function() {
               store = trans.objectStore(store);
               path = path ? path.split('/').map(decodeURIComponent) : [];
               // resolve path: substitute array indices in path with numeric keys;
-              // if path represents an empty array slot, second argument to callback is next available index
+              // if path represents an empty array slot, argument to callback is next available index
               (function(callback) {
                 (function advance(i, next) {
                   while (i < path.length && !/^(0|[1-9][0-9]*)$/.test(path[i])) i++;
@@ -396,7 +401,9 @@ var objectDB = function() {
                 upperExclusive=false: boolean
               } */
               
-          /** Cursor: string|function(path:[string|number, ...], array:boolean) -> boolean|Action|{
+          /** Cursor: string|LevelCursor|function(path:[string|number, ...], array:boolean) -> boolean|Action|LevelCursor */
+          
+          /** LevelCursor: {
                 lowerBound=null: string|number,
                 lowerExclusive=false: boolean,
                 upperBound=null: string|number,
@@ -419,7 +426,7 @@ var objectDB = function() {
               return either `'skip'` or `'stop'` to exclude the element at the given key from the structure or to
               exclude and stop iterating, respectively. If specified, the `value` function receives the value retrieved
               from each `key` and returns a value to insert into the parent object or array, or undefined to skip
-              insertion.
+              insertion. If `Cursor` is a `LevelCursor` object, it applies to the top-level object or array.
               
               For example, the following call uses a cursor to fetch only the immediate members of the object at the
               requested path (equivalent to `'immediates'`). Object and array values will be empty:
