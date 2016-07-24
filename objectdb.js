@@ -67,54 +67,6 @@ var objectDB = function() {
         operation on this `Database` will be populated with this value on an upgrade event. Otherwise, an upgrade will
         be handled by the given function via `UpgradeTransaction`. */
       var self, db, queue, close;
-      var open = function(stores, callback) {
-        if (db) return callback();
-        if (queue) return queue.push(callback);
-        queue = [callback];
-        var request = indexedDB.open(database, version || 1);
-        request.onupgradeneeded = function(e) {
-          var self, db = e.target.result,
-              data = upgrade === undefined || typeof upgrade == 'function' ? {} : upgrade;
-          if (typeof upgrade != 'function') upgrade = function(db) {
-            (Array.isArray(stores) ? stores : [stores]).forEach(function(name) {
-              db.createObjectStore(name, data);
-            });
-          };
-          /** UpgradeTransaction: {
-                oldVersion: number,
-                newVersion: number,
-                createObjectStore: function(name:string, data=`{}`:json) -> UpgradeTransaction,
-                deleteObjectStore: function(name:string) -> UpgradeTransaction
-              } */
-          upgrade(self = {
-            oldVersion: e.oldVersion,
-            newVersion: e.newVersion,
-            createObjectStore: function(name, data) {
-              if (db.objectStoreNames.contains(name))
-                throw new Error('objectStore already exists');
-              put(db.createObjectStore(name, {keyPath: ['parent', 'key']}), [], data === undefined ? {} : data, function() {});
-              return self;
-            },
-            deleteObjectStore: function(name) {
-              if (db.objectStoreNames.contains(name))
-                db.deleteObjectStore(name);
-              return self;
-            }
-          });
-        };
-        request.onsuccess = function(e) {
-          db = e.target.result;
-          while (callback = queue.shift()) callback();
-          if (close) {
-            db.close();
-            close = null;
-          }
-        };
-        if (onError) {
-          request.onerror = function(e) { onError(e.target.error, false); };
-          request.onblocked = function() { onError(null, true); };
-        }
-      };
       var transaction = function(writable, stores, object) {
         var group = {pending: 0, values: []},
             trans, self;
@@ -280,8 +232,61 @@ var objectDB = function() {
             if (!writable && name in {put: 1, append: 1, delete: 1})
               throw new Error('Transaction is read-only');
             var g = group, i = g.pending++;
-            open(stores, function() {
-              if (!trans) trans = db.transaction(stores, writable ? 'readwrite' : 'readonly');
+            (function(callback) {
+              if (db) return callback();
+              if (queue) return queue.push(callback);
+              queue = [callback];
+              var request = indexedDB.open(database, version || 1);
+              request.onupgradeneeded = function(e) {
+                var self, db = e.target.result,
+                    data = upgrade === undefined || typeof upgrade == 'function' ? {} : upgrade;
+                if (typeof upgrade != 'function') upgrade = function(db) {
+                  (Array.isArray(stores) ? stores : [stores]).forEach(function(name) {
+                    db.createObjectStore(name, data);
+                  });
+                };
+                /** UpgradeTransaction: {
+                      oldVersion: number,
+                      newVersion: number,
+                      createObjectStore: function(name:string, data=`{}`:json) -> UpgradeTransaction,
+                      deleteObjectStore: function(name:string) -> UpgradeTransaction
+                    } */
+                upgrade(self = {
+                  oldVersion: e.oldVersion,
+                  newVersion: e.newVersion,
+                  createObjectStore: function(name, data) {
+                    if (db.objectStoreNames.contains(name))
+                      throw new Error('objectStore already exists');
+                    put(db.createObjectStore(name, {keyPath: ['parent', 'key']}), [], data === undefined ? {} : data, function() {});
+                    return self;
+                  },
+                  deleteObjectStore: function(name) {
+                    if (db.objectStoreNames.contains(name))
+                      db.deleteObjectStore(name);
+                    return self;
+                  }
+                });
+              };
+              request.onsuccess = function(e) {
+                db = e.target.result;
+                while (callback = queue.shift()) callback();
+                if (close) {
+                  db.close();
+                  close = null;
+                }
+              };
+              if (onError) {
+                request.onerror = function() { onError(request.error, false); };
+                request.onblocked = function() { onError(null, true); };
+              }
+            }(function() {
+              if (!trans) try {
+                trans = db.transaction(stores, writable ? 'readwrite' : 'readonly');
+                if (onError) trans.onerror = function(e) { onError(trans.error, false); };
+              } catch (e) {
+                if (onError) return onError(e, false);
+                throw e;
+              }
               store = trans.objectStore(store);
               path = path ? path.split('/').map(decodeURIComponent) : [];
               // resolve path: substitute array indices in path with numeric keys;
@@ -326,7 +331,7 @@ var objectDB = function() {
                   }
                 }, value, next);
               }));
-            });
+            }));
           };
         });
         self.then = function(callback) {
