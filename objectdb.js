@@ -91,8 +91,11 @@ var objectDB = function() {
                     index = 0;
                 value = array ? [] : {};
                 var cb = function() {
+                  if (--pending) return;
                   // TODO: traverse desc arrays in desc order
-                  if (!--pending) callback(array && c.descending ? value.reverse() : value);
+                  if (array && c.descending) value = value.reverse();
+                  if (c.value) value = c.value(null, value);
+                  callback(value);
                 };
                 if (c === false) return cb();
                 if (!c || typeof c != 'object') c = {action: c};
@@ -415,7 +418,7 @@ var objectDB = function() {
                 upperExclusive=false: boolean,
                 descending=false: boolean,
                 action=undefined: Action,
-                value=undefined: function(key:string|number, value:json) -> json|undefined
+                value=undefined: function(key:string|number|null, value:json) -> json|undefined
               } */
               
           /** Action:function(key:string|number) -> undefined|string
@@ -431,7 +434,8 @@ var objectDB = function() {
               return either `'skip'` or `'stop'` to exclude the element at the given key from the structure or to
               exclude and stop iterating, respectively. If specified, the `value` function receives the value retrieved
               from each `key` and returns a value to insert into the parent object or array, or undefined to skip
-              insertion. If `Cursor` is a `LevelCursor` object, it applies to the top-level object or array.
+              insertion. `value` is then also called with null `key` and the object/array value itself. If `Cursor` is a
+              `LevelCursor` object, it applies to the top-level object or array.
               
               For example, the following call uses a cursor to fetch only the immediate members of the object at the
               requested path (equivalent to `'immediates'`). Object and array values will be empty:
