@@ -1,0 +1,154 @@
+<!doctype html>
+<html>
+  <head>
+    <title>objectDB</title>
+    <meta charset="utf-8">
+    <meta name="description" content="ObjectDB is a database library for indexedDB that lets you treat tables as JSON structures of arbitrary size and depth.">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <link rel="canonical" href="http://objectdb.kganser.com">
+    <link rel="stylesheet" href="http://kganser.com/css/common.css">
+    <link rel="stylesheet" href="http://kganser.com/css/prettify.css">
+    <link rel="stylesheet" href="http://jsonv.kganser.com/jsonv.css">
+    <link rel="stylesheet" href="http://docjs.kganser.com/doc-jsml.css">
+    <style>
+      #error {
+        background: #a00;
+        color: white;
+        padding: 2px 5px;
+        display: none;
+      }
+      #error a {
+        color: white;
+        text-decoration: underline;
+      }
+      #data, #commands {
+        display: inline-block;
+        vertical-align: top;
+        box-sizing: border-box;
+        width: 49%;
+        min-height: 200px;
+        margin: 0;
+      }
+      #data {
+        margin-right: 2%;
+      }
+    </style>
+  </head>
+  <body>
+    <a href="http://kganser.com">kganser.com</a>
+    <h1>objectDB</h1>
+    <p>ObjectDB is a transactional database library that lets you treat tables as JSON structures of arbitrary size and depth. Elements in the JSON structure are addressable with URI-encoded paths, and written using simple <code>put</code> and <code>delete</code> calls, as well as <code>append</code> and <code>insert</code> for array elements.</p>
+    <p>ObjectDB is backed by <a href="https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API">indexedDB</a>, the standard transactional noSQL database available in modern browsers. Its API makes indexedDB much easier to work with, but no less powerful.</p>
+    <h2>Demo</h2>
+    <p>The <a href="http://jsonv.kganser.com">jsonv</a> editor UI below allows you to modify the JSON structure stored in a database on your browser. To the right are the commands executed on your behalf.</p>
+    <p id="error"><strong>Error:</strong> Your browser does not appear to support indexedDB. Data below will not be persisted. See <a href="#compat">Compatibility</a>.</p>
+    <pre id="data"></pre><pre id="commands"></pre>
+    <h2>Usage</h2>
+    <p>Below are examples of objectDB's common uses. For detailed interface specs, see the <a href="#docs">documentation</a>.</p>
+    <h3>Opening the database</h3>
+    <pre class="prettyprint">var db = objectDB.open('demo');</pre>
+    <h4>Supplying initial data</h4>
+    <pre class="prettyprint">var db = objectDB.open('demo', {object: {key: 'value'}, array: ['elem1', 'elem2']});</pre>
+    <p>The JSON data specified in the second argument gets populated to any new objectStore involved in the first transaction on this database if an indexedDB upgrade event is triggered.</p>
+    <h4>Custom upgrade handler, database version, error handler</h4>
+    <pre class="prettyprint">var db = objectDB.open('demo', function(upgrade) {
+  upgrade.createObjectStore('newData', {key: 'value'});
+}, 2, function(error, blocked) {
+  if (blocked) alert('Database is already open in another window. Please close to continue.');
+  else console.error(error);
+});</pre>
+    <p>If the second argument is a function, it should handle an upgrade event using the provided <code>UpgradeTransaction</code> object. If the third (positive integer) argument is specified and greater than the current database version (1 at database creation), an upgrade event is triggered. An optional fourth argument is both the error handler and blocked operation handler for the database.</p>
+    <h3>Basic reading &amp; writing</h3>
+    <p>The database object returned by <code>open</code> immediately supports basic reads and writes to the default objectStore.</p>
+    <h4>Read all objectStore data</h4>
+    <pre class="prettyprint">db.get().then(function(data) {
+  console.log(data);
+});</pre>
+    <pre class="console">{object: {key: 'value'}, array: ['elem1', 'elem2']}</pre>
+    <h4>Read data at a path</h4>
+    <pre class="prettyprint">db.get('array').then(function(data) {
+  console.log(data);
+});</pre>
+    <pre class="console">['elem1', 'elem2']</pre>
+    <h4>Read data at multiple paths</h4>
+    <pre class="prettyprint">db.get('object').get('array').then(function(obj, arr) {
+  console.log(obj, arr);
+});</pre>
+    <pre class="console">{key: 'value'}, ['elem1', 'elem2']</pre>
+    <h4>Write data</h4>
+    <pre class="prettyprint">db.put('path', 'data').then(function(error) {
+  console.error(error);
+});</pre>
+    <h3>Reading with a cursor</h3>
+    <h4>Get only immediate elements</h4>
+    <pre class="prettyprint">db.get('', false, 'immediates').then(function(data) {
+  console.log(data);
+});</pre>
+    <pre class="console">{object: {}, array: []}</pre>
+    <h4>Filter elements</h4>
+    <pre class="prettyprint">db.get('array', function(path, array) {
+  return function(key) {
+    return key &lt; 1;
+  };
+}).then(function(data) {
+  console.log(data);
+});</pre>
+    <pre class="console">['elem1']</pre>
+    <h3>Transactions</h3>
+    <h4>Write after read</h4>
+    <pre class="prettyprint">db.get('number', true).then(function(num) {
+  this.put('number', num+1); // transactional increment
+});</pre>
+    <h4>Transactions on multiple objectStores</h4>
+    <pre class="prettyprint">db.transaction(true, ['sessions', 'users'])
+  .delete('sessions', 'kganser')
+  .delete('users', 'kganser');</pre>
+    <h2 id="compat">Compatibility</h2>
+    <p>ObjectDB requires indexedDB support, including array keys. Check the <a href="http://caniuse.com/#search=IndexedDB" target="_blank">compatibility table</a> and <a href="http://codepen.io/cemerick/pen/Itymi" target="_blank">feature tests</a> for your browser.</p>
+    <h2 id="docs">Documentation</h2>
+    <div id="doc"></div>
+    <a class="git-banner" href="http://github.com/kganser/objectdb"></a>
+    <script src="http://kganser.com/js/common.js"></script>
+    <script src="http://jsonv.kganser.com/jsonv.js"></script>
+    <script src="objectdb.js"></script>
+    <script>
+      (function(data, ui, commands, error) {
+        var start = function(data, db) {
+          if (!db) error.style.display = 'block';
+          commands.textContent = 'var db = objectDB.open("demo", '+JSON.stringify(data)+');\ndb.get();\n';
+          jsonv(ui, data, {
+            editor: true,
+            listener: function(command, path, value) {
+              if (command == 'toggle') return;
+              path = path.map(encodeURIComponent).join('/');
+              if (db) db[command](path, value);
+              commands.textContent += 'db.'+command+'("'+path+'"'+(value === undefined ? '' : ', '+JSON.stringify(value))+');\n';
+            }
+          });
+        };
+        if (!window.indexedDB) return start(data);
+        indexedDB.deleteDatabase('xxx');
+        indexedDB.open('xxx').onupgradeneeded = function(e) {
+          try {
+            e.target.result.createObjectStore('array-keypath', {keyPath: ['a', 'c']}).put({a:6, b:6, c:7});
+            var db = objectDB.open('demo', data);
+            db.get().then(function(data) { start(data, db); });
+          } catch (e) {
+            start(data);
+          }
+        };
+      }({
+        string: 'hello world',
+        number: 123,
+        null: null,
+        object: {key: 'value'},
+        array: ['elem1', 'elem2']
+      }, $('data'), $('commands'), $('error')));
+    </script>
+    <script src="http://jsml.kganser.com/jsml.js"></script>
+    <script src="http://docjs.kganser.com/doc.js"></script>
+    <script src="http://docjs.kganser.com/doc-jsml.js"></script>
+    <script src="http://kganser.com/js/prettify.js"></script>
+    <script>doc('objectdb.js', $('doc'));</script>
+  </body>
+</html>
