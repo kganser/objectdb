@@ -58,8 +58,7 @@ var objectDB = function() {
     open: function(database, upgrade, version, onError) {
     /** objectDB: {
           open: function(database:string, upgrade=`{}`:json|function(UpgradeTransaction), version=1:number, onError=undefined:function(error:DOMError, blocked:boolean)) -> Database,
-          delete: function(database:string, callback:function(error:undefined|DOMError, blocked:boolean)),
-          list: function(callback:function(DOMStringList))
+          delete: function(database:string, callback:function(error:undefined|DOMError, blocked:boolean))
         }
         
         ObjectDB is backed by `indexedDB`. An upgrade transaction runs on `open` if the database version is less than
@@ -71,7 +70,8 @@ var objectDB = function() {
         var group = {pending: 0, values: []},
             trans, self;
         Object.keys(self = {
-          get: function(store, path, callback, cursor) {
+          get: function(store, path, callback, cursor, exists) {
+            if (!exists) return callback();
             var c = cursor;
             if (cursor === 'shallow') cursor = function() { return false; };
             else if (cursor === 'immediates') cursor = function(p) { return !p.length; };
@@ -139,7 +139,7 @@ var objectDB = function() {
               callback(e.target.result);
             };
           },
-          put: function(store, path, callback, value, next) {
+          put: function(store, path, callback, value, exists) {
             store.get(makeKey(path.slice(0, -1))).onsuccess = function(e) {
               var parent = e.target.result,
                   key = path[path.length-1];
@@ -149,29 +149,28 @@ var objectDB = function() {
                 return callback('Parent resource is not an object or array');
               if (parent.type == 'array' && typeof key != 'number')
                 return callback('Invalid index to array resource');
-              if (next == null) {
+              if (exists) {
                 deleteChildren(store, path, function() {
                   put(store, path, value, callback);
                 });
               } else { // empty array slot: append
-                path[path.length-1] = next;
                 put(store, path, value, callback);
               }
             };
           },
-          insert: function(store, path, callback, value, next) {
+          insert: function(store, path, callback, value, exists) {
             var parentPath = path.slice(0, -1),
                 key = path[path.length-1],
-                i = 0, last;
+                last = key,
+                i = 1;
             if (typeof key != 'number')
               return callback('Resource is not an array item');
-            if (next == null) {
-              store.openCursor(scopedRange(parentPath, key)).onsuccess = function(e) {
+            if (exists) {
+              store.openCursor(scopedRange(parentPath, key+1)).onsuccess = function(e) {
                 var cursor = e.target.result;
-                if (cursor) last = cursor.value.key;
-                if (!cursor && last != null || last > key+i++) {
+                if (!cursor || cursor.value.key > key+i) {
                   // shift subsequent keys by one
-                  store.openCursor(scopedRange(parentPath, key, last, false, !!cursor), 'prev').onsuccess = function(e) {
+                  store.openCursor(scopedRange(parentPath, key, last), 'prev').onsuccess = function(e) {
                     cursor = e.target.result;
                     if (!cursor) return put(store, path, value, callback);
                     var result = cursor.value,
@@ -202,12 +201,12 @@ var objectDB = function() {
                       };
                     }(parentPath.concat([key]), parentPath.concat([key+1]), type));
                   };
-                } else if (cursor) {
+                } else {
+                  last = key+i++;
                   cursor.continue();
                 }
               };
             } else {
-              path[path.length-1] = next;
               put(store, path, value, callback);
             }
           },
@@ -239,7 +238,7 @@ var objectDB = function() {
               if (db) return callback();
               if (queue) return queue.push(callback);
               queue = [callback];
-              var request = indexedDB.open(database, version || 1);
+              var request = indexedDB.open(database, version);
               request.onupgradeneeded = function(e) {
                 var self, db = e.target.result,
                     data = upgrade === undefined || typeof upgrade == 'function' ? {} : upgrade;
@@ -285,54 +284,59 @@ var objectDB = function() {
             }(function() {
               if (!trans) try {
                 trans = db.transaction(stores, writable ? 'readwrite' : 'readonly');
-                if (onError) trans.onerror = function(e) { onError(trans.error, false); };
+                if (onError) trans.onerror = function() { onError(trans.error, false); };
               } catch (e) {
                 if (onError) return onError(e, false);
                 throw e;
               }
               store = trans.objectStore(store);
-              path = path ? path.split('/').map(decodeURIComponent) : [];
+              if (!Array.isArray(path))
+                path = path ? path.split('/').map(decodeURIComponent) : [];
+              else if (path.some(function(segment) {
+                return !{number: 1, string: 1}[typeof segment];
+              })) throw new Error('Invalid path: '+path);
               // resolve path: substitute array indices in path with numeric keys;
-              // if path represents an empty array slot, argument to callback is next available index
+              // if path represents an empty array slot, fills in with next available index
               (function(callback) {
-                (function advance(i, next) {
-                  while (i < path.length && !/^(0|[1-9][0-9]*)$/.test(path[i])) i++;
-                  if (i == path.length) return callback(next);
-                  var position = parseInt(path[i]),
-                      last = i == path.length-1;
+                (function resolve(i) {
+                  while (i < path.length && typeof path[i] != 'number' && !/^(0|[1-9][0-9]*)$/.test(path[i])) i++;
+                  if (i == path.length) return callback(true);
+                  var position = +path[i];
                   store.get(makeKey(path.slice(0, i))).onsuccess = function(e) {
                     var result = e.target.result;
-                    if (!result) return callback();
-                    if (result.type != 'array') return advance(i+1);
+                    if (!result) return callback(false);
+                    if (result.type != 'array') return resolve(i+1);
                     // set to numeric index initially, and to key if element is found
                     path[i] = position;
                     store.openCursor(scopedRange(path.slice(0, i))).onsuccess = function(e) {
                       var cursor = e.target.result;
                       if (cursor) {
                         if (position) {
-                          if (last) {
+                          if (i == path.length-1) {
                             position--;
-                            next = cursor.value.key+1;
+                            path[i] = cursor.value.key+1;
                             return cursor.continue();
                           }
                           cursor.advance(position);
                           return position = 0;
                         }
                         path[i] = cursor.value.key;
-                        last = false;
+                        resolve(i+1);
+                      } else {
+                        callback(false);
                       }
-                      advance(i+1, last ? next || 0 : null);
                     };
                   };
                 }(0));
-              }(function(next) {
+              }(function(exists) {
+                // `exists` applies to array index paths only; actual item may still not exist
                 method(store, path, function(value) {
                   g.values[i] = value;
                   if (!--g.pending && g.callback) {
                     g.callback.apply(object, g.values);
                     g = null;
                   }
-                }, value, next);
+                }, value, exists);
               }));
             }));
           };
@@ -346,12 +350,12 @@ var objectDB = function() {
       };
       /** Database: {
             transaction: function(writable=false:boolean, stores='data':[string, ...]|string) -> Transaction|ScopedTransaction,
-            get: function(path='':string, writable=false:boolean, cursor='deep':Cursor, store='data':string) -> ScopedTransaction,
-            count: function(path='':string, writable=false:boolean, bounds=undefined:Bounds, store='data':string) -> ScopedTransaction,
-            put: function(path='':string, value:json, store='data':string) -> ScopedTransaction,
-            insert: function(path='':string, value:json, store='data':string) -> ScopedTransaction,
-            append: function(path='':string, value:json, store='data':string) -> ScopedTransaction,
-            delete: function(path='':string, store='data':string) -> ScopedTransaction,
+            get: function(path='':Path, writable=false:boolean, cursor='deep':Cursor, store='data':string) -> ScopedTransaction,
+            count: function(path='':Path, writable=false:boolean, bounds=undefined:Bounds, store='data':string) -> ScopedTransaction,
+            put: function(path='':Path, value:json, store='data':string) -> ScopedTransaction,
+            insert: function(path='':Path, value:json, store='data':string) -> ScopedTransaction,
+            append: function(path='':Path, value:json, store='data':string) -> ScopedTransaction,
+            delete: function(path='':Path, store='data':string) -> ScopedTransaction,
             close: function
           }
           
@@ -363,12 +367,12 @@ var objectDB = function() {
         transaction: function(writable, stores) {
           if (stores == null) stores = 'data';
           /** Transaction: {
-                get: function(store:string, path='':string, cursor='deep':Cursor) -> Transaction,
-                count: function(store:string, path='':string, bounds=undefined:Bounds) -> Transaction,
-                put: function(store:string, path='':string, value:json) -> Transaction,
-                insert: function(store:string, path='':string, value:json) -> Transaction,
-                append: function(store:string, path='':string, value:json) -> Transaction,
-                delete: function(store:string, path='':string) -> Transaction,
+                get: function(store:string, path='':Path, cursor='deep':Cursor) -> Transaction,
+                count: function(store:string, path='':Path, bounds=undefined:Bounds) -> Transaction,
+                put: function(store:string, path='':Path, value:json) -> Transaction,
+                insert: function(store:string, path='':Path, value:json) -> Transaction,
+                append: function(store:string, path='':Path, value:json) -> Transaction,
+                delete: function(store:string, path='':Path) -> Transaction,
                 then: function(callback:function(this:Transaction, json|undefined, ...)) -> Transaction
               }
               
@@ -376,12 +380,12 @@ var objectDB = function() {
               operation. Otherwise, these methods correspond to `ScopedTransaction` methods. */
               
           /** ScopedTransaction: {
-                get: function(path='':string, cursor='deep':Cursor) -> ScopedTransaction,
-                count: function(path='':string, bounds=undefined:Bounds) -> ScopedTransaction,
-                put: function(path='':string, value:json) -> ScopedTransaction,
-                insert: function(path='':string, value:json) -> ScopedTransaction,
-                append: function(path='':string, value:json) -> ScopedTransaction,
-                delete: function(path='':string) -> ScopedTransaction,
+                get: function(path='':Path, cursor='deep':Cursor) -> ScopedTransaction,
+                count: function(path='':Path, bounds=undefined:Bounds) -> ScopedTransaction,
+                put: function(path='':Path, value:json) -> ScopedTransaction,
+                insert: function(path='':Path, value:json) -> ScopedTransaction,
+                append: function(path='':Path, value:json) -> ScopedTransaction,
+                delete: function(path='':Path) -> ScopedTransaction,
                 then: function(callback:function(this:ScopedTransaction, json|undefined, ...)) -> ScopedTransaction
               }
               
@@ -389,18 +393,22 @@ var objectDB = function() {
               the preceding sequence of operations, or throws an error if no operations are pending. If the transaction
               is not writable, `put`, `insert`, `append`, and `delete` throw an error.
               
-              `path` is a `/`-separated string of array indices and `encodeURIComponent`-encoded object keys denoting
-              the path to the desired element within the object store's json data structure; e.g.
-              `'users/123/firstName'`. `cursor` buffers all data at the requested path as the result of a
-              `get` operation. `count` returns a count of the number of elements in an object or array at `path` (with
-              optional `bounds`). `insert` will splice the given `value` into the parent array at the specified
-              position, shifting any subsequent elements forward.
+              By default, `cursor` buffers all data at the requested path as the result of a `get` operation. `count`
+              returns a count of the number of elements in an object or array at `path` (with optional `bounds`).
+              `insert` will splice the given `value` into the parent array at the specified position, shifting any
+              subsequent elements forward.
               
               When all its pending operations complete, `callback` is called with the result of each queued operation in
               order. More operations can be queued onto the same transaction at that time via `this`.
               
               Results from `put`, `insert`, `append`, and `delete` are error strings or undefined if successful. `get`
               results are json data or undefined if no value exists at the requested path. */
+              
+          /** Path: string|[string|number, ...]
+              
+              Path is either a `/`-delimited string of `encodeURIComponent`-encoded keys or an array of unencoded keys
+              and numeric indices to an element within the json data structure; e.g. `'users/123/firstName'` or
+              `['users', 123, 'firstName']`. */
               
           /** Bounds: {
                 lowerBound=null: string|number,
@@ -547,17 +555,15 @@ var objectDB = function() {
     },
     delete: function(database, callback) {
       var request = indexedDB.deleteDatabase(database);
-      request.onsuccess = request.onerror = function(e) {
+      request.onsuccess = request.onerror = callback && function(e) {
         callback(e.target.error, false);
       };
-      request.onblocked = function() {
+      request.onblocked = callback && function() {
         callback(null, true);
       };
     },
-    list: function(callback) {
-      indexedDB.webkitGetDatabaseNames().onsuccess = function(e) {
-        callback(e.target.result);
-      };
+    list: function(callback) { // deprecated
+      callback([]);
     }
   };
 }();
