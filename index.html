@@ -5,11 +5,11 @@
     <meta charset="utf-8">
     <meta name="description" content="ObjectDB is a database library for indexedDB that lets you treat tables as JSON structures of arbitrary size and depth.">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <link rel="canonical" href="http://objectdb.kganser.com">
-    <link rel="stylesheet" href="http://kganser.com/css/common.css">
-    <link rel="stylesheet" href="http://kganser.com/css/prettify.css">
-    <link rel="stylesheet" href="http://jsonv.kganser.com/jsonv.css">
-    <link rel="stylesheet" href="http://docjs.kganser.com/doc-jsml.css">
+    <link rel="canonical" href="https://objectdb.kganser.com">
+    <link rel="stylesheet" href="//kganser.com/css/common.css">
+    <link rel="stylesheet" href="//kganser.com/css/prettify.css">
+    <link rel="stylesheet" href="//jsonv.kganser.com/jsonv.css">
+    <link rel="stylesheet" href="//docjs.kganser.com/doc-jsml.css">
     <style>
       #error {
         background: #a00;
@@ -38,12 +38,12 @@
     </style>
   </head>
   <body>
-    <a href="http://kganser.com">kganser.com</a>
+    <a href="//kganser.com">kganser.com</a>
     <h1>objectDB</h1>
     <p>ObjectDB is a transactional database library that lets you treat tables as JSON structures of arbitrary size and depth. Elements in the JSON structure are addressable with URI-encoded paths, and written using simple <code>put</code> and <code>delete</code> calls, as well as <code>append</code> and <code>insert</code> for array elements.</p>
     <p>ObjectDB is backed by <a href="https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API">indexedDB</a>, the standard transactional noSQL database available in modern browsers. Its API makes indexedDB much easier to work with, but no less powerful.</p>
     <h2>Demo</h2>
-    <p>The <a href="http://jsonv.kganser.com">jsonv</a> editor UI below allows you to modify the JSON structure stored in a database on your browser. To the right are the commands executed on your behalf.</p>
+    <p>The <a href="//jsonv.kganser.com">jsonv</a> editor UI below allows you to modify the JSON structure stored in a database on your browser. To the right are the commands executed on your behalf.</p>
     <p id="error"><strong>Error:</strong> Your browser does not appear to support indexedDB. Data below will not be persisted. See <a href="#compat">Compatibility</a>.</p>
     <pre id="data"></pre><pre id="commands"></pre>
     <h2>Usage</h2>
@@ -107,12 +107,12 @@
   .delete('sessions', 'kganser')
   .delete('users', 'kganser');</pre>
     <h2 id="compat">Compatibility</h2>
-    <p>ObjectDB requires indexedDB support, including array keys. Check the <a href="http://caniuse.com/#search=IndexedDB" target="_blank">compatibility table</a> and <a href="http://codepen.io/cemerick/pen/Itymi" target="_blank">feature tests</a> for your browser.</p>
+    <p>ObjectDB requires indexedDB support, including array keys. Check the <a href="https://caniuse.com/#search=IndexedDB" target="_blank">compatibility table</a> and <a href="https://codepen.io/cemerick/pen/Itymi" target="_blank">feature tests</a> for your browser.</p>
     <h2 id="docs">Documentation</h2>
     <div id="doc"></div>
-    <a class="git-banner" href="http://github.com/kganser/objectdb"></a>
-    <script src="http://kganser.com/js/common.js"></script>
-    <script src="http://jsonv.kganser.com/jsonv.js"></script>
+    <a class="git-banner" href="//github.com/kganser/objectdb"></a>
+    <script src="//kganser.com/js/common.js"></script>
+    <script src="//jsonv.kganser.com/jsonv.js"></script>
     <script src="objectdb.js"></script>
     <script>
       (function(data, ui, commands, error) {
@@ -148,10 +148,10 @@
         array: ['elem1', 'elem2']
       }, $('data'), $('commands'), $('error')));
     </script>
-    <script src="http://jsml.kganser.com/jsml.js"></script>
-    <script src="http://docjs.kganser.com/doc.js"></script>
-    <script src="http://docjs.kganser.com/doc-jsml.js"></script>
-    <script src="http://kganser.com/js/prettify.js"></script>
+    <script src="//jsml.kganser.com/jsml.js"></script>
+    <script src="//docjs.kganser.com/doc.js"></script>
+    <script src="//docjs.kganser.com/doc-jsml.js"></script>
+    <script src="//kganser.com/js/prettify.js"></script>
     <script>doc('objectdb.js', $('doc'));</script>
   </body>
 </html>
